@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    container_name: cs-hw-06-app
+    ports:
+      - "3000:3000"
+      - "5001:5001"
+    depends_on:
+      - mongo
+    networks:
+      - mongo_app
+
+
+  mongo:
+    image: arm64v8/mongo:latest
+    container_name: cs-hw-06-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=viacheslav
+      - MONGO_INITDB_ROOT_PASSWORD=gHBf993$^^5
+      - MONGO_INITDB_DATABASE=message_db
+    networks:
+      - mongo_app
+
+volumes:
+  mongo_data:
+
+networks:
+  mongo_app:
