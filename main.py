@@ -1,43 +1,41 @@
-import datetime
+import socketserver
 import socket
 import json
-import threading
-import socketserver
 from datetime import datetime
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import http.server
+import threading
+import multiprocessing
 import urllib.parse
+from pymongo import MongoClient
+import traceback
 
+# Settings
+HTTP_PORT = 3000
+SOCKET_PORT = 5001
+MONGO_HOST = "mongo"
+MONGO_PORT = 27017
+DB_NAME = "message_db"
+COLLECTION_NAME = "messages"
+MONGO_USER = "viacheslav"
+MONGO_PASSWORD = "gHBf993$^^5"
 
-host = 'localhost'
-port = 27017
-username ='viacheslav',
-password ='ghj123YUI',
-auth_db = 'admin'
+# Connection to MongoDB with authorization
+client = MongoClient(f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/")
+db = client[DB_NAME]
+collection = db[COLLECTION_NAME]
+
 
 def get_db():
     try:
-        mongo_client = MongoClient(
-            host,
-            port,
-            username=username,
-            password=password,
-            authSource=auth_db
-        )
-
+        # mongo_client = MongoClient(MONGO_URI)
         print("Connection to MongoDB is successful!")
-        return mongo_client["message_db"]
-    except ConnectionFailure as e:
+        return client["message_db"]
+    except Exception as e:
         print(f"Error connecting to MongoDB: {e}")
         exit(1)
 
-# client = MongoClient("mongodb://localhost:27017/")
-db = get_db()
-collection = db['messages']
 
-
-class MyHandler(BaseHTTPRequestHandler):
+class MyHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urllib.parse.urlparse(self.path).path
 
@@ -82,15 +80,20 @@ class MyHandler(BaseHTTPRequestHandler):
             parsed_data = urllib.parse.parse_qs(post_data.decode())
 
             message_data = {
-                "date": datetime.datetime.now().isoformat(),
+                "date": datetime.now().isoformat(),
                 "username": parsed_data.get("username", [""])[0],
                 "message": parsed_data.get("message", [""])[0],
             }
 
-            # Отправка данных на socket-сервер (TCP)
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.connect(("localhost", 5001))
-                sock.sendall(json.dumps(message_data).encode())
+            # Sending data to a socket server (TCP)
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.connect(("host.docker.internal", 5001))
+                    sock.sendall(json.dumps(message_data).encode())
+            except Exception as e:
+                traceback.print_exc()
+                self.send_error(500, f"Message sending error: {e}")
+                return
 
             self.send_response(302)
             self.send_header("Location", "/")
@@ -102,37 +105,29 @@ class MyHandler(BaseHTTPRequestHandler):
 # Create an HTTP server
 def run_http_server():
     handler = MyHandler
-    with socketserver.TCPServer(("", 3000), handler) as httpd:
-        print("HTTP server is running on port 3000")
+    with socketserver.TCPServer(("", HTTP_PORT), handler) as httpd:
+        print(f"HTTP server is running on port {HTTP_PORT}")
         httpd.serve_forever()
 
-# Step 2: Create a Socket server for data processing
+
+# Create a Socket server for data processing
 def run_socket_server():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('localhost', 5001))
-    sock.listen(1)
-
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("", SOCKET_PORT))
+    print(f"Starting a socket server on a port {SOCKET_PORT}")
     while True:
-        client_socket, client_address = sock.accept()
-        data = client_socket.recv(1024).decode()
-        if data:
-            # Parsing data and saving to MongoDB
-            try:
-                message_data = json.loads(data)
-                message_data["date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                collection.insert_one(message_data)
-                print(f"Message saved: {message_data}")
-            except Exception as e:
-                print(f"Data processing error: {e}")
-        client_socket.close()
+        data, _ = sock.recvfrom(1024)
+        message_data = json.loads(data.decode())
+        collection.insert_one(message_data)
 
-# Function for sending data to the Socket server
-def send_to_socket_server(user_name, message):
+
+def send_to_socket_server(username, message):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(('localhost', 5001))
-    message_data = json.dumps({"username": user_name, "message": message})
+    sock.connect(('mongo', 5001))
+    message_data = json.dumps({"username": username, "message": message})
     sock.sendall(message_data.encode())
     sock.close()
+
 
 if __name__ == '__main__':
     # Running servers in separate threads

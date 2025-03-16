@@ -1,32 +1,39 @@
 services:
   app:
     build: .
-    container_name: cs-hw-06-app
+    container_name: app_main
     ports:
       - "3000:3000"
-      - "5001:5001"
     depends_on:
       - mongo
     networks:
-      - mongo_app
+      - my_network
 
+  socket_server:
+    build: .
+    container_name: app_sock_server
+    command: python main.py --socket
+    ports:
+      - "5001:5001"
+    restart: always
+    depends_on:
+      - mongo
+    networks:
+      - my_network
 
   mongo:
     image: arm64v8/mongo:latest
-    container_name: cs-hw-06-mongo
+    container_name: app_mongo
     ports:
       - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=viacheslav
-      - MONGO_INITDB_ROOT_PASSWORD=gHBf993$^^5
-      - MONGO_INITDB_DATABASE=message_db
+      MONGO_INITDB_ROOT_USERNAME: viacheslav
+      MONGO_INITDB_ROOT_PASSWORD: gHBf993$^^5
+      MONGO_INITDB_DATABASE: message_db
+    volumes:
+      - ./mongo_storage:/data/db
     networks:
-      - mongo_app
-
-volumes:
-  mongo_data:
+      - my_network
 
 networks:
-  mongo_app:
+  my_network:
