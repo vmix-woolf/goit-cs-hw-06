@@ -4,3 +4,4 @@ __pycache__
 .DS_Store
 .venv
 mongo_storage
+creds.py

@@ -4,10 +4,11 @@ import json
 from datetime import datetime
 import http.server
 import threading
-import multiprocessing
 import urllib.parse
 from pymongo import MongoClient
 import traceback
+from creds import mongo_user, mongo_password
+
 
 # Settings
 HTTP_PORT = 3000
@@ -16,23 +17,13 @@ MONGO_HOST = "mongo"
 MONGO_PORT = 27017
 DB_NAME = "message_db"
 COLLECTION_NAME = "messages"
-MONGO_USER = "viacheslav"
-MONGO_PASSWORD = "gHBf993$^^5"
+MONGO_USER = mongo_user
+MONGO_PASSWORD = mongo_password
 
 # Connection to MongoDB with authorization
 client = MongoClient(f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/")
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
-
-
-def get_db():
-    try:
-        # mongo_client = MongoClient(MONGO_URI)
-        print("Connection to MongoDB is successful!")
-        return client["message_db"]
-    except Exception as e:
-        print(f"Error connecting to MongoDB: {e}")
-        exit(1)
 
 
 class MyHandler(http.server.BaseHTTPRequestHandler):
@@ -112,21 +103,23 @@ def run_http_server():
 
 # Create a Socket server for data processing
 def run_socket_server():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("", SOCKET_PORT))
-    print(f"Starting a socket server on a port {SOCKET_PORT}")
-    while True:
-        data, _ = sock.recvfrom(1024)
-        message_data = json.loads(data.decode())
-        collection.insert_one(message_data)
-
-
-def send_to_socket_server(username, message):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(('mongo', 5001))
-    message_data = json.dumps({"username": username, "message": message})
-    sock.sendall(message_data.encode())
-    sock.close()
+    sock.bind(("", SOCKET_PORT))
+    sock.listen(5)
+    print(f"Starting a TCP socket server on port {SOCKET_PORT}")
+
+    while True:
+        conn, _ = sock.accept()
+        data = conn.recv(1024)
+        message_data = json.loads(data.decode())
+
+        try:
+            result = collection.insert_one(message_data)
+            print(f"Record successful! ID: {result.inserted_id}")
+        except Exception as e:
+            print(f"Error while writing to MongoDB: {e}")
+
+        conn.close()
 
 
 if __name__ == '__main__':
